@@ -38,16 +38,9 @@ class APIManager:
 # Gemini API Key (from Google AI Studio)
 GEMINI_API_KEY=your_gemini_api_key_here
 
-# Bing Image Search API Keys (from Microsoft Azure Cognitive Services)
-BING_API_KEY_1=your_bing_api_key_1_here
-BING_API_KEY_2=your_bing_api_key_2_here
-BING_API_KEY_3=your_bing_api_key_3_here
-
-# Pexels API Key (for high-quality stock photos)
-PEXELS_API_KEY=your_pexels_api_key_here
-
-# Cloudflare API Key (optional)
+# Cloudflare API Configuration
 CLOUDFLARE_API_KEY=your_cloudflare_api_key_here
+CLOUDFLARE_EMAIL=your_cloudflare_email_here
 
 # Instructions:
 # 1. Replace 'your_api_key_here' with your actual API keys
@@ -132,47 +125,36 @@ CLOUDFLARE_API_KEY=your_cloudflare_api_key_here
         except Exception as e:
             return {'success': False, 'error': f'Gemini API test failed: {str(e)}'}
             
-    def test_bing_api(self) -> Dict:
-        """Test Bing Image Search API connection"""
+    def test_cloudflare_api(self) -> Dict:
+        """Test Cloudflare API connection"""
         try:
-            api_keys = self.get_bing_api_keys()
-            if not api_keys:
-                return {'success': False, 'error': 'No Bing API keys found'}
+            api_key = self.get_api_key('CLOUDFLARE_API_KEY')
+            email = self.get_api_key('CLOUDFLARE_EMAIL')
             
-            # Test first API key
-            api_key = api_keys[0]
+            if not api_key or not email:
+                return {'success': False, 'error': 'Cloudflare API key or email not configured'}
             
             headers = {
-                'Ocp-Apim-Subscription-Key': api_key,
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                'X-Auth-Email': email,
+                'X-Auth-Key': api_key,
+                'Content-Type': 'application/json'
             }
             
-            params = {
-                'q': 'test',
-                'count': 1,
-                'safeSearch': 'Moderate'
-            }
-            
-            response = requests.get(
-                'https://api.bing.microsoft.com/v7.0/images/search',
-                headers=headers,
-                params=params,
-                timeout=10
-            )
+            response = requests.get('https://api.cloudflare.com/client/v4/user', headers=headers)
             
             if response.status_code == 200:
-                return {'success': True, 'message': f'Bing API connection successful. Found {len(api_keys)} API keys.'}
+                return {'success': True, 'message': 'Cloudflare API connection successful'}
             else:
-                return {'success': False, 'error': f'Bing API returned status code: {response.status_code}'}
+                return {'success': False, 'error': f'Cloudflare API returned status code: {response.status_code}'}
                 
         except Exception as e:
-            return {'success': False, 'error': f'Bing API test failed: {str(e)}'}
+            return {'success': False, 'error': f'Cloudflare API test failed: {str(e)}'}
             
     def get_api_status(self) -> Dict:
         """Get status of all APIs"""
         status = {
             'gemini': self.test_gemini_api(),
-            'bing': self.test_bing_api(),
+            'cloudflare': self.test_cloudflare_api(),
             'total_keys': len(self.api_keys),
             'available_keys': []
         }

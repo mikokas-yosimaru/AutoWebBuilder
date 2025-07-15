@@ -1,3 +1,5 @@
+import streamlit as st
+
 def show_api_settings(api_manager, pixel_api):
     """Simplified API settings with only Gemini and Cloudflare API"""
     st.header("🔐 API Settings")

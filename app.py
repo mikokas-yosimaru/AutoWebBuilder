@@ -181,9 +181,10 @@ def main():
     if menu_option == "Dashboard":
         show_worker_dashboard(multi_domain_manager, keyword_generator, pixel_api, log_manager, domain_config_manager, auto_content_manager, gemini_ai, bing_image_scraper, article_formatter)
     elif menu_option == "API Settings":
+        from new_api_settings import show_api_settings
         show_api_settings(api_manager, pixel_api)
     elif menu_option == "Add New Site":
-        show_add_site(site_builder, domain_analyzer, seo_optimizer, multi_domain_manager, domain_config_manager)
+        show_add_site(site_builder, domain_analyzer, seo_optimizer, multi_domain_manager, domain_config_manager, api_manager)
 
 def show_worker_dashboard(multi_domain_manager, keyword_generator, pixel_api, log_manager, domain_config_manager, auto_content_manager, gemini_ai, bing_image_scraper, article_formatter):
     """Minimalistic Worker Panel dashboard with 9x6 grid layout"""
@@ -433,7 +434,7 @@ def show_worker_dashboard(multi_domain_manager, keyword_generator, pixel_api, lo
     if 'dashboard_page' not in st.session_state:
         st.session_state.dashboard_page = 0
 
-def show_add_site(site_builder, domain_analyzer, seo_optimizer, multi_domain_manager, domain_config_manager):
+def show_add_site(site_builder, domain_analyzer, seo_optimizer, multi_domain_manager, domain_config_manager, api_manager):
     st.header("➕ Add New Domain")
     
     # Template preview section
@@ -555,6 +556,7 @@ def show_add_site(site_builder, domain_analyzer, seo_optimizer, multi_domain_man
                                   format_func=lambda x: template_options[x]['name'])
             category = st.selectbox("Site Category", ["Blog", "Business", "Portfolio", "E-commerce", "News", "Educational"])
             auto_generate = st.checkbox("Auto-generate content based on domain analysis", value=True)
+            deploy_cloudflare = st.checkbox("Deploy to Cloudflare after creation", value=False)
         
         submitted = st.form_submit_button("🚀 Create Domain")
         
@@ -625,6 +627,39 @@ def show_add_site(site_builder, domain_analyzer, seo_optimizer, multi_domain_man
                     
                     st.success(f"Domain '{site_title}' created successfully!")
                     st.info(f"Configuration saved to: {domain_config_manager.get_config_file_path(domain)}")
+                    
+                    # Deploy to Cloudflare if requested
+                    if deploy_cloudflare:
+                        try:
+                            from utils.cloudflare_deploy import CloudflareDeploy
+                            
+                            # Get Cloudflare API credentials
+                            cloudflare_key = api_manager.get_api_key('CLOUDFLARE_API_KEY')
+                            cloudflare_email = api_manager.get_api_key('CLOUDFLARE_EMAIL')
+                            
+                            if cloudflare_key and cloudflare_email:
+                                with st.spinner("Deploying to Cloudflare..."):
+                                    cloudflare_deploy = CloudflareDeploy(cloudflare_key, cloudflare_email)
+                                    
+                                    # Generate site content for deployment
+                                    site_content = site_builder.generate_preview(domain, site_data)
+                                    
+                                    # Deploy to Cloudflare
+                                    deploy_result = cloudflare_deploy.deploy_static_site(domain, site_content)
+                                    
+                                    if deploy_result.get('success'):
+                                        st.success(f"✅ Successfully deployed to Cloudflare!")
+                                        st.info(f"Site files created at: {deploy_result.get('site_path', 'N/A')}")
+                                        if deploy_result.get('deployment_notes'):
+                                            st.info(deploy_result['deployment_notes'])
+                                    else:
+                                        st.error(f"❌ Cloudflare deployment failed: {deploy_result.get('error', 'Unknown error')}")
+                            else:
+                                st.warning("⚠️ Cloudflare deployment skipped: API credentials not configured")
+                                st.info("Please configure Cloudflare API in API Settings to enable deployment")
+                        except Exception as e:
+                            st.error(f"❌ Cloudflare deployment error: {str(e)}")
+                    
                     st.session_state.selected_menu = "Dashboard"
                     st.rerun()
                 else:
@@ -1841,159 +1876,7 @@ def show_domain_analytics_modal(multi_domain_manager, domain):
         st.session_state.analytics_domain = None
         st.rerun()
 
-def show_api_settings(api_manager, pixel_api):
-    """Enhanced API settings with Pixel API support"""
-    st.header("🔐 API Settings")
-    
-    # Custom CSS for cPanel-like appearance
-    st.markdown("""
-    <style>
-    .api-status-card {
-        background: #f0f2f6;
-        border: 1px solid #e1e5e9;
-        border-radius: 8px;
-        padding: 20px;
-        margin: 10px 0;
-    }
-    .status-success {
-        color: #28a745;
-        font-weight: bold;
-    }
-    .status-error {
-        color: #dc3545;
-        font-weight: bold;
-    }
-    .api-key-input {
-        background: #ffffff;
-        border: 1px solid #ced4da;
-        border-radius: 4px;
-        padding: 8px;
-        margin: 5px 0;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-    
-    # Get API status
-    api_status = api_manager.get_api_status()
-    
-    # API Status Overview
-    st.subheader("📊 API Status Overview")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.metric("Total Keys", api_status['total_keys'])
-    
-    with col2:
-        st.metric("Active Keys", len(api_status['available_keys']))
-    
-    with col3:
-        gemini_status = "✅ Connected" if api_status['gemini']['success'] else "❌ Disconnected"
-        st.metric("Gemini Status", gemini_status)
-    
-    # Gemini API Configuration
-    st.subheader("🤖 Gemini AI Configuration")
-    
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        current_gemini_key = api_manager.get_api_key('GEMINI_API_KEY') or ''
-        new_gemini_key = st.text_input(
-            "Gemini API Key",
-            value=current_gemini_key[:20] + "..." if len(current_gemini_key) > 20 else current_gemini_key,
-            type="password",
-            help="Get your API key from Google AI Studio"
-        )
-        
-        if st.button("Update Gemini API Key"):
-            if new_gemini_key and not new_gemini_key.endswith("..."):
-                if api_manager.update_api_key('GEMINI_API_KEY', new_gemini_key):
-                    st.success("✅ Gemini API key updated successfully!")
-                    st.rerun()
-                else:
-                    st.error("❌ Failed to update Gemini API key")
-            else:
-                st.warning("Please enter a valid API key")
-    
-    with col2:
-        if st.button("Test Gemini API"):
-            test_result = api_manager.test_gemini_api()
-            if test_result['success']:
-                st.success("✅ Gemini API working!")
-            else:
-                st.error(f"❌ {test_result['error']}")
-    
-    # Bing API Configuration
-    st.subheader("🖼️ Bing Image Search Configuration")
-    
-    bing_keys = api_manager.get_bing_api_keys()
-    
-    for i in range(1, 4):
-        col1, col2 = st.columns([2, 1])
-        
-        with col1:
-            current_key = api_manager.get_api_key(f'BING_API_KEY_{i}') or ''
-            new_key = st.text_input(
-                f"Bing API Key {i}",
-                value=current_key[:20] + "..." if len(current_key) > 20 else current_key,
-                type="password",
-                help="Get your API key from Microsoft Azure Cognitive Services"
-            )
-            
-            if st.button(f"Update Bing API Key {i}"):
-                if new_key and not new_key.endswith("..."):
-                    if api_manager.update_api_key(f'BING_API_KEY_{i}', new_key):
-                        st.success(f"✅ Bing API key {i} updated successfully!")
-                        st.rerun()
-                    else:
-                        st.error(f"❌ Failed to update Bing API key {i}")
-                else:
-                    st.warning("Please enter a valid API key")
-        
-        with col2:
-            if st.button(f"Test Bing API {i}"):
-                test_result = api_manager.test_bing_api()
-                if test_result['success']:
-                    st.success("✅ Bing API working!")
-                else:
-                    st.error(f"❌ {test_result['error']}")
-    
-    # API Usage Guidelines
-    st.subheader("📋 API Usage Guidelines")
-    
-    st.markdown("""
-    **Gemini API:**
-    - Free tier: 15 requests per minute
-    - Used for: Article generation, keyword research, SEO optimization
-    - Get your key: [Google AI Studio](https://ai.google.dev/)
-    
-    **Bing Image Search API:**
-    - Free tier: 1,000 transactions per month
-    - Used for: Image search and optimization
-    - Get your key: [Microsoft Azure Portal](https://portal.azure.com/)
-    
-    **API Key Security:**
-    - Keys are stored locally in `apikey.txt`
-    - Never share your API keys publicly
-    - Rotate keys regularly for security
-    """)
-    
-    # Load API keys from file
-    if st.button("🔄 Reload API Keys from File"):
-        api_manager.load_api_keys()
-        st.success("✅ API keys reloaded from apikey.txt")
-        st.rerun()
-    
-    # Show current API file content
-    with st.expander("View apikey.txt Content"):
-        try:
-            with open("apikey.txt", "r") as f:
-                content = f.read()
-                st.code(content, language="text")
-        except FileNotFoundError:
-            st.warning("apikey.txt file not found. It will be created automatically.")
-        except Exception as e:
-            st.error(f"Error reading apikey.txt: {str(e)}")
+# Old API settings function removed - now using new_api_settings.py
 
 def show_auto_content_manager(auto_content_manager, gemini_ai, bing_image_scraper, keyword_generator, article_formatter, domain_config_manager):
     """Enhanced auto content manager with domain-specific configuration"""
